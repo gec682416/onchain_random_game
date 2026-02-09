@@ -1,0 +1,35 @@
+# Dependencies
+lib/
+node_modules/
+
+# Foundry
+cache/
+out/
+broadcast/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Coverage
+coverage/
+coverage.json
+lcov.info
+
+# Logs
+*.log
+
+# Build artifacts
+artifacts/
+typechain/
+typechain-types/
