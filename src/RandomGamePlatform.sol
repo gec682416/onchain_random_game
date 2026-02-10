@@ -86,6 +86,25 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
     /// @notice Current VRF configuration.
     VRFConfig public vrfConfig;
 
+    /// @notice Return VRF configuration details for external tooling.
+    function getVRFConfig()
+        external
+        view
+        returns (
+            address vrfCoordinator,
+            bytes32 keyHash,
+            uint64 subId,
+            uint32 callbackGasLimit
+        )
+    {
+        return (
+            address(s_vrfCoordinator),
+            vrfConfig.keyHash,
+            uint64(vrfConfig.subId),
+            vrfConfig.callbackGasLimit
+        );
+    }
+
     /// @notice Token configs mapped by token address (address(0) for ETH).
     mapping(address => TokenConfig) public tokenConfigs;
 
