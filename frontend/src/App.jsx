@@ -16,7 +16,9 @@ const initialStatus = {
   nextLotteryId: "0",
   vrf: { keyHash: "-", subId: "-", callbackGas: "-" }
 };
-
+const MOCK_ABI = [
+  "function fulfillRandomWordsWithOverride(uint256 requestId, address consumer, uint32 numWords) external"
+];
 export default function App() {
   const [status, setStatus] = useState(initialStatus);
   const [message, setMessage] = useState("");
@@ -42,7 +44,6 @@ export default function App() {
   }, []);
 
   const contractAddress = APP_CONFIG.contractAddress;
-
   const getContract = async (withSigner = false) => {
     if (!provider) throw new Error("MetaMask not found");
     const signer = withSigner ? await provider.getSigner() : null;
@@ -108,12 +109,42 @@ export default function App() {
   };
 
   const ensureNetwork = async () => {
-    if (!provider) return;
-    const network = await provider.getNetwork();
-    if (Number(network.chainId) !== APP_CONFIG.chainId) {
-      throw new Error("Please switch MetaMask to Sepolia.");
-    }
-  };
+      if (!provider) return;
+      const network = await provider.getNetwork();
+      if (Number(network.chainId) !== APP_CONFIG.chainId) {
+        try {
+          // 尝试自动切换到本地网络
+          await window.ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: "0x7a69" }],
+          });
+        } catch (switchError) {
+          if (switchError.code === 4902) {
+            try {
+              await window.ethereum.request({
+                method: "wallet_addEthereumChain",
+                params: [
+                  {
+                    chainId: "0x7a69", // 31337
+                    chainName: "Anvil Localhost",
+                    nativeCurrency: {
+                      name: "ETH",
+                      symbol: "ETH",
+                      decimals: 18,
+                    },
+                    rpcUrls: ["http://127.0.0.1:8545"],
+                  },
+                ],
+              });
+            } catch (addError) {
+              throw new Error("Please add Anvil Localhost (Chain ID 31337) to MetaMask.");
+            }
+          } else {
+            throw new Error("Please switch MetaMask to Anvil Localhost.");
+          }
+        }
+      }
+    };
 
   const handleFund = async () => {
     try {
@@ -162,24 +193,68 @@ export default function App() {
     }
   };
 
-  const handlePlayDice = async () => {
-    try {
-      setLoading(true);
-      await ensureNetwork();
-      const contract = await getContract(true);
-      const stakeWei = parseEther(diceStake || "0");
-      const tx = await contract.playDice(APP_CONFIG.defaultToken, stakeWei, Number(diceRollUnder), {
-        value: stakeWei
-      });
-      await tx.wait();
-      setMessage("Dice bet submitted. Wait for VRF callback.");
-      await refreshStatus();
-    } catch (err) {
-      setMessage(err.message ?? "Dice bet failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
+const handlePlayDice = async () => {
+  try {
+    setLoading(true);
+    await ensureNetwork();
+    const contract = await getContract(true);
+    const stakeWei = parseEther(diceStake || "0");
+    const tx1 = await contract.playDice(
+      APP_CONFIG.defaultToken,
+      stakeWei,
+      Number(diceRollUnder),
+      { value: stakeWei }
+    );
+    const receipt1 = await tx1.wait();
+
+    console.log("Bet Success！Now waiting...");
+    setMessage("Bet placed. Waiting for VRF result...");
+
+    const provider = new BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const mockContract = new Contract(APP_CONFIG.mockAddress, MOCK_ABI, signer);
+
+    const nextDiceId = await contract.nextDiceId();
+    const currentRequestId = (await contract.diceBets(Number(nextDiceId) - 1)).requestId;
+
+    console.log("2. Transacting... RequestID:", currentRequestId);
+    const tx2 = await mockContract.fulfillRandomWordsWithOverride(
+       currentRequestId,
+       APP_CONFIG.contractAddress,
+       1,
+       {
+              gasLimit: 500000
+       }
+    );
+    await tx2.wait();
+
+    setMessage("VRF Callback received! You " + "won/lost check UI");
+    await refreshStatus();
+console.log("2. Comfirming...");
+const receipt2 = await tx2.wait();
+console.log("Comfirming success！");
+
+const currentDiceId = Number(await contract.nextDiceId()) - 1;
+const betResult = await contract.diceBets(currentDiceId);
+
+const isWin = betResult[6];
+const rollNumber = betResult[7];
+
+// 4. 更新 UI 提示
+if (isWin) {
+    setMessage(`congratulations！You win！Dice point is: ${rollNumber} (Less than ${diceRollUnder})`);
+} else {
+    setMessage(`Oh no！You lose. Dice point is: ${rollNumber} (Need less than ${diceRollUnder})`);
+}
+
+await refreshStatus();
+  } catch (err) {
+    console.error(err);
+    setMessage(err.message ?? "Dice bet failed.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleCreateLottery = async () => {
     try {
@@ -220,21 +295,57 @@ export default function App() {
     }
   };
 
-  const handleDraw = async () => {
-    try {
-      setLoading(true);
-      await ensureNetwork();
-      const contract = await getContract(true);
-      const tx = await contract.requestLotteryDraw(Number(lotteryId || 0));
-      await tx.wait();
-      setMessage("Draw requested. Await VRF callback.");
-      await refreshStatus();
-    } catch (err) {
-      setMessage(err.message ?? "Draw request failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
+const handleDraw = async () => {
+  try {
+    setLoading(true);
+    await ensureNetwork();
+
+    const contract = await getContract(true);
+    const provider = new BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+
+    const mockContract = new Contract(APP_CONFIG.mockAddress, MOCK_ABI, signer);
+
+    const currentLotteryId = Number(lotteryId || 0);
+
+    console.log(`1. 请求开奖 Lottery #${currentLotteryId}...`);
+    const tx1 = await contract.requestLotteryDraw(currentLotteryId);
+    await tx1.wait();
+    console.log("请求已上链！正在获取 Request ID...");
+
+    const lotteryInfo = await contract.lotteries(currentLotteryId);
+
+    const requestId = lotteryInfo[8];
+    console.log("获取到 Request ID:", requestId.toString());
+
+    setMessage("Draw requested. Triggering VRF callback...");
+
+    console.log("2. 触发 Mock 开奖交易...");
+    const tx2 = await mockContract.fulfillRandomWordsWithOverride(
+      requestId,
+      APP_CONFIG.contractAddress,
+      1,
+      { gasLimit: 500000 } //
+    );
+    await tx2.wait();
+    console.log("Mock 回调成功！");
+
+    const updatedLotteryInfo = await contract.lotteries(currentLotteryId);
+    const winner = updatedLotteryInfo[5];
+    const pot = formatEther(updatedLotteryInfo[4]);
+
+    setMessage(`🎉 开奖完成！中奖者: ${winner.slice(0, 6)}...${winner.slice(-4)} 奖池: ${pot} ETH`);
+
+    await refreshStatus();
+
+  } catch (err) {
+    console.error(err);
+    const errorMsg = err.reason || err.message || "Draw request failed.";
+    setMessage("Error: " + errorMsg);
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     if (!provider) return;
