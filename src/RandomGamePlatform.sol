@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "lib/openzeppelin-contracts//contracts/utils/ReentrancyGuard.sol";
+import {IERC20} from "lib/openzeppelin-contracts//contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "lib/openzeppelin-contracts//contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
-import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-
+import {VRFConsumerBaseV2Plus} from "lib/chainlink-brownie-contracts/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import {VRFV2PlusClient} from "lib/chainlink-brownie-contracts/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 /**
  * @title RandomGamePlatform
  * @notice A verifiable on-chain random game platform integrating Chainlink VRF V2.5.
-  * @dev Supports a time-based Lottery and a multiplier Dice game with ETH and ERC-20 wagers.
+ * @dev Supports a time-based Lottery and a multiplier Dice game with ETH and ERC-20 wagers.
  *      Follows Checks-Effects-Interactions (CEI) and uses OpenZeppelin security modules.
  */
 contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
@@ -120,13 +119,26 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
     );
 
     /// @notice Emitted when tickets are purchased.
-    event TicketsPurchased(uint256 indexed lotteryId, address indexed buyer, uint256 count, uint256 cost);
+    event TicketsPurchased(
+        uint256 indexed lotteryId,
+        address indexed buyer,
+        uint256 count,
+        uint256 cost
+    );
 
     /// @notice Emitted when a lottery draw is requested.
-    event LotteryDrawRequested(uint256 indexed lotteryId, uint256 indexed requestId);
+    event LotteryDrawRequested(
+        uint256 indexed lotteryId,
+        uint256 indexed requestId
+    );
 
     /// @notice Emitted when a lottery is drawn.
-    event LotteryDrawn(uint256 indexed lotteryId, address indexed winner, uint256 pot, uint256 randomWord);
+    event LotteryDrawn(
+        uint256 indexed lotteryId,
+        address indexed winner,
+        uint256 pot,
+        uint256 randomWord
+    );
 
     /// @notice Emitted when a dice bet is placed.
     event DicePlayed(
@@ -149,7 +161,12 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
     );
 
     /// @notice Emitted when token config is updated.
-    event TokenConfigUpdated(address indexed token, bool enabled, uint256 minBet, uint256 maxBet);
+    event TokenConfigUpdated(
+        address indexed token,
+        bool enabled,
+        uint256 minBet,
+        uint256 maxBet
+    );
 
     /// @notice Emitted when house edge is updated.
     event HouseEdgeUpdated(uint256 oldBps, uint256 newBps);
@@ -249,7 +266,10 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
      * @param lotteryId Lottery id.
      * @param count Number of tickets to buy.
      */
-    function buyTickets(uint256 lotteryId, uint256 count) external payable nonReentrant {
+    function buyTickets(
+        uint256 lotteryId,
+        uint256 count
+    ) external payable nonReentrant {
         require(count > 0 && count <= MAX_TICKETS_PER_BUY, "invalid count");
 
         Lottery storage lot = lotteries[lotteryId];
@@ -276,7 +296,9 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
      * @notice Request a lottery draw after it ends.
      * @param lotteryId Lottery id.
      */
-    function requestLotteryDraw(uint256 lotteryId) external onlyOwner nonReentrant {
+    function requestLotteryDraw(
+        uint256 lotteryId
+    ) external onlyOwner nonReentrant {
         Lottery storage lot = lotteries[lotteryId];
         require(block.timestamp >= lot.endTime, "not ended");
         require(!lot.drawRequested && !lot.drawn, "drawn");
@@ -288,7 +310,11 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
         // Interactions
         uint256 requestId = _requestRandomWords();
         lot.requestId = requestId;
-        requests[requestId] = RequestInfo({game: GameType.Lottery, id: lotteryId, exists: true});
+        requests[requestId] = RequestInfo({
+            game: GameType.Lottery,
+            id: lotteryId,
+            exists: true
+        });
 
         emit LotteryDrawRequested(lotteryId, requestId);
     }
@@ -299,7 +325,11 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
      * @param stake Wager amount.
      * @param rollUnder Win condition: roll must be < rollUnder (2-99).
      */
-    function playDice(address token, uint256 stake, uint8 rollUnder) external payable nonReentrant {
+    function playDice(
+        address token,
+        uint256 stake,
+        uint8 rollUnder
+    ) external payable nonReentrant {
         TokenConfig memory cfg = tokenConfigs[token];
         require(cfg.enabled, "token disabled");
         require(stake >= cfg.minBet && stake <= cfg.maxBet, "bet bounds");
@@ -307,7 +337,10 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
         uint256 potentialPayout = _calcDicePayout(stake, rollUnder);
         require(potentialPayout > 0, "payout=0");
-        require(_canLock(token, stake, potentialPayout), "insufficient liquidity");
+        require(
+            _canLock(token, stake, potentialPayout),
+            "insufficient liquidity"
+        );
 
         uint256 diceId = nextDiceId++;
 
@@ -331,9 +364,21 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
         // Effects (requestId depends on interaction)
         diceBets[diceId].requestId = requestId;
-        requests[requestId] = RequestInfo({game: GameType.Dice, id: diceId, exists: true});
+        requests[requestId] = RequestInfo({
+            game: GameType.Dice,
+            id: diceId,
+            exists: true
+        });
 
-        emit DicePlayed(diceId, msg.sender, token, stake, rollUnder, potentialPayout, requestId);
+        emit DicePlayed(
+            diceId,
+            msg.sender,
+            token,
+            stake,
+            rollUnder,
+            potentialPayout,
+            requestId
+        );
     }
 
     /**
@@ -406,7 +451,11 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
         uint256 maxBet
     ) external onlyOwner {
         require(minBet <= maxBet, "min>max");
-        tokenConfigs[token] = TokenConfig({enabled: enabled, minBet: minBet, maxBet: maxBet});
+        tokenConfigs[token] = TokenConfig({
+            enabled: enabled,
+            minBet: minBet,
+            maxBet: maxBet
+        });
         emit TokenConfigUpdated(token, enabled, minBet, maxBet);
     }
 
@@ -444,7 +493,11 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
      * @param amount Amount to withdraw.
      * @param to Recipient address.
      */
-    function withdraw(address token, uint256 amount, address to) external onlyOwner nonReentrant {
+    function withdraw(
+        address token,
+        uint256 amount,
+        address to
+    ) external onlyOwner nonReentrant {
         require(to != address(0), "to=0");
         require(amount > 0, "amount=0");
         uint256 available = _availableBalance(token);
@@ -459,7 +512,9 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
      * @param lotteryId Lottery id.
      * @return count Number of entries.
      */
-    function getLotteryEntryCount(uint256 lotteryId) external view returns (uint256 count) {
+    function getLotteryEntryCount(
+        uint256 lotteryId
+    ) external view returns (uint256 count) {
         return lotteries[lotteryId].entries.length;
     }
 
@@ -469,7 +524,10 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
      * @param index Entry index.
      * @return entry Address of the entry.
      */
-    function getLotteryEntry(uint256 lotteryId, uint256 index) external view returns (address entry) {
+    function getLotteryEntry(
+        uint256 lotteryId,
+        uint256 index
+    ) external view returns (address entry) {
         return lotteries[lotteryId].entries[index];
     }
 
@@ -479,7 +537,10 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
      * @param rollUnder Win condition.
      * @return payout Potential payout.
      */
-    function calcDicePayout(uint256 stake, uint8 rollUnder) external view returns (uint256 payout) {
+    function calcDicePayout(
+        uint256 stake,
+        uint8 rollUnder
+    ) external view returns (uint256 payout) {
         return _calcDicePayout(stake, rollUnder);
     }
 
@@ -562,23 +623,31 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
     }
 
     function _requestRandomWords() internal returns (uint256 requestId) {
-        VRFV2PlusClient.RandomWordsRequest memory req = VRFV2PlusClient.RandomWordsRequest({
-            keyHash: vrfConfig.keyHash,
-            subId: vrfConfig.subId,
-            requestConfirmations: vrfConfig.requestConfirmations,
-            callbackGasLimit: vrfConfig.callbackGasLimit,
-            numWords: vrfConfig.numWords,
-            extraArgs: VRFV2PlusClient._argsToBytes(
-                VRFV2PlusClient.ExtraArgsV1({nativePayment: vrfConfig.nativePayment})
-            )
-        });
+        VRFV2PlusClient.RandomWordsRequest memory req = VRFV2PlusClient
+            .RandomWordsRequest({
+                keyHash: vrfConfig.keyHash,
+                subId: vrfConfig.subId,
+                requestConfirmations: vrfConfig.requestConfirmations,
+                callbackGasLimit: vrfConfig.callbackGasLimit,
+                numWords: vrfConfig.numWords,
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({
+                        nativePayment: vrfConfig.nativePayment
+                    })
+                )
+            });
 
         return s_vrfCoordinator.requestRandomWords(req);
     }
 
-    function _calcDicePayout(uint256 stake, uint8 rollUnder) internal view returns (uint256 payout) {
+    function _calcDicePayout(
+        uint256 stake,
+        uint8 rollUnder
+    ) internal view returns (uint256 payout) {
         // Fair multiplier = 100 / rollUnder. Apply house edge (bps) to reduce payout.
-        uint256 numerator = stake * (BPS_DENOMINATOR - houseEdgeBps) * DICE_SIDES;
+        uint256 numerator = stake *
+            (BPS_DENOMINATOR - houseEdgeBps) *
+            DICE_SIDES;
         uint256 denominator = uint256(rollUnder) * BPS_DENOMINATOR;
         return numerator / denominator;
     }
@@ -596,7 +665,11 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
         return IERC20(token).balanceOf(address(this));
     }
 
-    function _canLock(address token, uint256 stake, uint256 payout) internal view returns (bool) {
+    function _canLock(
+        address token,
+        uint256 stake,
+        uint256 payout
+    ) internal view returns (bool) {
         uint256 locked = lockedFunds[token];
         if (token == address(0)) {
             // For ETH, msg.value is already in balance during execution.
@@ -604,5 +677,89 @@ contract RandomGamePlatform is VRFConsumerBaseV2Plus, ReentrancyGuard {
         }
         uint256 bal = IERC20(token).balanceOf(address(this));
         return bal + stake >= locked + payout;
+    }
+
+    function getVRFConfig()
+        external
+        view
+        returns (
+            address coordinator,
+            bytes32 keyHash,
+            uint256 subId,
+            uint16 requestConfirmations,
+            uint32 callbackGasLimit,
+            uint32 numWords,
+            bool nativePayment
+        )
+    {
+        return (
+            address(s_vrfCoordinator),
+            vrfConfig.keyHash,
+            vrfConfig.subId,
+            vrfConfig.requestConfirmations,
+            vrfConfig.callbackGasLimit,
+            vrfConfig.numWords,
+            vrfConfig.nativePayment
+        );
+    }
+    function getLotteryInfo(
+        uint256 lotteryId
+    )
+        external
+        view
+        returns (
+            uint256 startTime,
+            uint256 endTime,
+            address token,
+            uint256 ticketPrice,
+            uint256 pot,
+            address winner,
+            bool drawRequested,
+            bool drawn,
+            uint256 entryCount
+        )
+    {
+        Lottery storage lot = lotteries[lotteryId];
+        return (
+            lot.startTime,
+            lot.endTime,
+            lot.token,
+            lot.ticketPrice,
+            lot.pot,
+            lot.winner,
+            lot.drawRequested,
+            lot.drawn,
+            lot.entries.length
+        );
+    }
+    function getDiceInfo(
+        uint256 diceId
+    )
+        external
+        view
+        returns (
+            address player,
+            address token,
+            uint256 stake,
+            uint8 rollUnder,
+            uint256 potentialPayout,
+            bool resolved,
+            bool win,
+            uint8 roll,
+            uint256 requestId
+        )
+    {
+        DiceBet storage bet = diceBets[diceId];
+        return (
+            bet.player,
+            bet.token,
+            bet.stake,
+            bet.rollUnder,
+            bet.potentialPayout,
+            bet.resolved,
+            bet.win,
+            bet.roll,
+            bet.requestId
+        );
     }
 }
