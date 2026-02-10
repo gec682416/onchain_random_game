@@ -16,11 +16,15 @@ contract DeployScript is Script {
     bytes32 constant SEPOLIA_GAS_LANE = 
         0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c;
     uint32 constant CALLBACK_GAS_LIMIT = 500000;
+    uint16 constant REQUEST_CONFIRMATIONS = 3;
+    bool constant NATIVE_PAYMENT = true;
+    uint256 constant HOUSE_EDGE_BPS = 200;
 
     function run() external {
         // 从环境变量读取配置
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         uint64 subscriptionId = uint64(vm.envUint("SUBSCRIPTION_ID"));
+        address initialOwner = vm.addr(deployerPrivateKey);
 
         console2.log("Deploying RandomGamePlatform...");
         console2.log("Deployer:", vm.addr(deployerPrivateKey));
@@ -34,7 +38,11 @@ contract DeployScript is Script {
             SEPOLIA_VRF_COORDINATOR,
             SEPOLIA_GAS_LANE,
             subscriptionId,
-            CALLBACK_GAS_LIMIT
+            REQUEST_CONFIRMATIONS,
+            CALLBACK_GAS_LIMIT,
+            NATIVE_PAYMENT,
+            HOUSE_EDGE_BPS,
+            initialOwner
         );
 
         console2.log("RandomGamePlatform deployed at:", address(platform));
@@ -47,11 +55,11 @@ contract DeployScript is Script {
 
         console2.log("\n=== Deployment Summary ===");
         console2.log("Contract Address:", address(platform));
-        console2.log("Owner:", platform.owner());
+        console2.log("Owner:", initialOwner);
         console2.log("VRF Subscription ID:", subscriptionId);
         console2.log("\nNext steps:");
         console2.log("1. Add this contract as a consumer in your VRF subscription");
-        console2.log("2. Deposit funds to the platform pool using depositToPool()");
+        console2.log("2. Enable token config (setTokenConfig) and fund the contract (fundETH/fundToken)");
         console2.log("3. Verify contract on Etherscan (if --verify flag was used)");
     }
 }
@@ -65,10 +73,14 @@ contract DeployAndSetupScript is Script {
     bytes32 constant SEPOLIA_GAS_LANE = 
         0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c;
     uint32 constant CALLBACK_GAS_LIMIT = 500000;
+    uint16 constant REQUEST_CONFIRMATIONS = 3;
+    bool constant NATIVE_PAYMENT = true;
+    uint256 constant HOUSE_EDGE_BPS = 200;
 
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         uint64 subscriptionId = uint64(vm.envUint("SUBSCRIPTION_ID"));
+        address initialOwner = vm.addr(deployerPrivateKey);
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -77,24 +89,22 @@ contract DeployAndSetupScript is Script {
             SEPOLIA_VRF_COORDINATOR,
             SEPOLIA_GAS_LANE,
             subscriptionId,
-            CALLBACK_GAS_LIMIT
+            REQUEST_CONFIRMATIONS,
+            CALLBACK_GAS_LIMIT,
+            NATIVE_PAYMENT,
+            HOUSE_EDGE_BPS,
+            initialOwner
         );
 
         console2.log("Contract deployed at:", address(platform));
 
-        // 初始设置
-        platform.depositToPool{value: 10 ether}(address(0), 10 ether);
-        console2.log("Deposited 10 ETH to platform pool");
-
-        // 创建第一个抽奖（示例）
-        platform.startLottery(0.1 ether, 7 days, address(0));
-        console2.log("Started first lottery with 0.1 ETH ticket price");
+        // 初始设置（根据需要调整）
+        platform.setTokenConfig(address(0), true, 0.01 ether, 1 ether);
+        console2.log("Enabled ETH bets: 0.01 - 1 ETH");
 
         vm.stopBroadcast();
 
         console2.log("\n=== Setup Complete ===");
         console2.log("Contract:", address(platform));
-        console2.log("Platform Pool (ETH):", platform.getPlatformPoolBalance(address(0)));
-        console2.log("Current Lottery ID:", platform.getCurrentLotteryId());
     }
 }
