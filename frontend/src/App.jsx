@@ -16,9 +16,9 @@ const initialStatus = {
   nextLotteryId: "0",
   vrf: { keyHash: "-", subId: "-", callbackGas: "-" }
 };
-const MOCK_ABI = [
+/*const MOCK_ABI = [
   "function fulfillRandomWordsWithOverride(uint256 requestId, address consumer, uint32 numWords) external"
-];
+];*/
 export default function App() {
   const [status, setStatus] = useState(initialStatus);
   const [message, setMessage] = useState("");
@@ -121,7 +121,7 @@ export default function App() {
           // Attempt to automatically switch to local network
           await window.ethereum.request({
             method: "wallet_switchEthereumChain",
-            params: [{ chainId: "0x7a69" }],
+            params: [{ chainId: "0xaa36a7" }],
           });
         } catch (switchError) {
           if (switchError.code === 4902) {
@@ -130,22 +130,22 @@ export default function App() {
                 method: "wallet_addEthereumChain",
                 params: [
                   {
-                    chainId: "0x7a69", // 31337
-                    chainName: "Anvil Localhost",
+                    chainId: "0xaa36a7",
+                    chainName: "Sepolia",
                     nativeCurrency: {
-                      name: "ETH",
+                      name: "Sepolia ETH",
                       symbol: "ETH",
                       decimals: 18,
                     },
-                    rpcUrls: ["http://127.0.0.1:8545"],
+                    rpcUrls: ["https://eth-sepolia.g.alchemy.com/v2/jJO7a4jYpZYPWpamVdJS1"],
                   },
                 ],
               });
             } catch (addError) {
-              throw new Error("Please add Anvil Localhost (Chain ID 31337) to MetaMask.");
+              throw new Error("Please add Sepolia network to MetaMask.");
             }
           } else {
-            throw new Error("Please switch MetaMask to Anvil Localhost.");
+            throw new Error("Please switch MetaMask to Sepolia network.");
           }
         }
       }
@@ -204,18 +204,19 @@ const handlePlayDice = async () => {
     await ensureNetwork();
     const contract = await getContract(true);
     const stakeWei = parseEther(diceStake || "0");
+
     const tx1 = await contract.playDice(
       APP_CONFIG.defaultToken,
       stakeWei,
       Number(diceRollUnder),
       { value: stakeWei }
     );
-    const receipt1 = await tx1.wait();
-
-    console.log("Bet Success! Now waiting...");
-    setMessage("Bet placed. Waiting for VRF result...");
-
-    const provider = new BrowserProvider(window.ethereum);
+    setMessage("Transaction sent. Waiting for confirmation...");
+    await tx1.wait();
+    
+    console.log("Bet transaction confirmed");
+    await refreshStatus();
+    /*const provider = new BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const mockContract = new Contract(APP_CONFIG.mockAddress, MOCK_ABI, signer);
 
@@ -231,11 +232,41 @@ const handlePlayDice = async () => {
               gasLimit: 500000
        }
     );
-    await tx2.wait();
+    await tx2.wait();*/
 
-    setMessage("VRF Callback received! You " + "won/lost check UI");
-    await refreshStatus();
-console.log("Comfirming...");
+    setMessage("Bet placed successfully! 🎲 Waiting for Chainlink VRF result (approx. 1-2 mins)...");
+    const currentNextId = await contract.nextDiceId();
+    const myDiceId = Number(currentNextId) - 1;
+    console.log(`Polling status for Dice ID: ${myDiceId}`);
+    
+    const intervalId = setInterval(async () => {
+        try {
+          const readContract = await getContract(false);
+          const bet = await readContract.diceBets(myDiceId);
+
+          if (bet.resolved) {
+            clearInterval(intervalId);
+            
+            const resultMsg = bet.win 
+              ? `🎉 You Won! Roll: ${bet.roll}. Payout: ${formatEther(bet.potentialPayout)} ETH` 
+              : `💀 You Lost. Roll: ${bet.roll}. Better luck next time!`;
+            
+            setMessage(resultMsg);
+            await refreshStatus();
+            setLoading(false);
+          } else {
+            console.log("VRF pending...");
+          }
+        } catch (pollErr) {
+          console.error("Polling error:", pollErr);
+        }
+      }, 3000);
+
+      setTimeout(() => {
+        clearInterval(intervalId);
+        if (loading) setLoading(false);
+      }, 180000);
+/*console.log("Comfirming...");
 const receipt2 = await tx2.wait();
 console.log("Comfirming success! ");
 
@@ -252,7 +283,7 @@ if (isWin) {
     setMessage(`Oh no! You lose. Dice point is: ${rollNumber} (Need less than ${diceRollUnder})`);
 }
 
-await refreshStatus();
+await refreshStatus();*/
   } catch (err) {
     console.error(err);
     setMessage(err.message ?? "Dice bet failed.");
@@ -306,7 +337,15 @@ const handleDraw = async () => {
     await ensureNetwork();
 
     const contract = await getContract(true);
-    const provider = new BrowserProvider(window.ethereum);
+    const currentLotteryId = Number(lotteryId || 0);
+
+    console.log(`Requesting draw for Lottery #${currentLotteryId}...`);
+
+    const tx1 = await contract.requestLotteryDraw(currentLotteryId);
+    setMessage("Request sent. Waiting for confirmation...");
+    await tx1.wait();
+    await refreshStatus();
+    /*const provider = new BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
 
     const mockContract = new Contract(APP_CONFIG.mockAddress, MOCK_ABI, signer);
@@ -337,11 +376,41 @@ const handleDraw = async () => {
 
     const updatedLotteryInfo = await contract.lotteries(currentLotteryId);
     const winner = updatedLotteryInfo[5];
-    const pot = formatEther(updatedLotteryInfo[4]);
+    const pot = formatEther(updatedLotteryInfo[4]);*/
 
-    setMessage(`🎉 Draw Complete! Winner: ${winner.slice(0, 6)}...${winner.slice(-4)} pot: ${pot} ETH`);
+    console.log("Draw request confirmed");
+    setMessage("Draw requested successfully! Waiting for Chainlink VRF to pick a winner (takes ~1-2 mins)...");
 
-    await refreshStatus();
+    const intervalId = setInterval(async () => {
+        try {
+          const readContract = await getContract(false);
+          const lot = await readContract.lotteries(currentLotteryId);
+
+          if (lot.drawn) {
+            clearInterval(intervalId);
+
+            const winner = lot.winner;
+
+            if (status.account && winner.toLowerCase() === status.account.toLowerCase()) {
+               setMessage(`🎉 CONGRATS! You won Lottery #${currentLotteryId}!`);
+            } else {
+               setMessage(`Draw Complete! Winner: ${winner.slice(0,6)}...${winner.slice(-4)}`);
+            }
+            
+            await refreshStatus();
+            setLoading(false);
+          } else {
+            console.log("Lottery VRF pending...");
+          }
+        } catch (pollErr) {
+          console.error("Polling error:", pollErr);
+        }
+      }, 3000);
+
+      setTimeout(() => {
+        clearInterval(intervalId);
+        if (loading) setLoading(false);
+      }, 180000);
 
   } catch (err) {
     console.error(err);
@@ -429,14 +498,48 @@ const handleUnifiedRefund = async () => {
   useEffect(() => {
     if (!provider) return;
     if (!window.ethereum) return;
-    const handler = () => refreshStatus();
-    window.ethereum.on("accountsChanged", handler);
-    window.ethereum.on("chainChanged", handler);
+    const handleAccountsChanged = () => refreshStatus();
+    const handleChainChanged = () => window.location.reload();
+    window.ethereum.on("accountsChanged", handleAccountsChanged);
+    window.ethereum.on("chainChanged", handleChainChanged);
     return () => {
-      window.ethereum.removeListener("accountsChanged", handler);
-      window.ethereum.removeListener("chainChanged", handler);
+      window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+      window.ethereum.removeListener("chainChanged", handleChainChanged);
     };
   }, [provider]);
+
+  useEffect(() => {
+    if (!status.account || !provider) return;
+
+    const setupEventListener = async () => {
+      const contract = await getContract();
+      
+      contract.on("DiceResolved", (diceId, player, win, roll, payout) => {
+        if (player.toLowerCase() === status.account.toLowerCase()) {
+          const resultMsg = win 
+            ? `🎉 You Won! Roll: ${roll}. Payout: ${formatEther(payout)} ETH` 
+            : `💀 You Lost. Roll: ${roll}. Better luck next time!`;
+          setMessage(resultMsg);
+          refreshStatus();
+        }
+      });
+
+      contract.on("LotteryDrawn", (lotteryId, winner, payout) => {
+        if (winner.toLowerCase() === status.account.toLowerCase()) {
+          setMessage(`🎊 CONGRATS! You won the Lottery #${lotteryId}! Prize: ${formatEther(payout)} ETH`);
+        } else {
+          setMessage(`Lottery #${lotteryId} drawn. Winner is ${winner.slice(0,6)}...`);
+        }
+        refreshStatus();
+      });
+    };
+
+    setupEventListener();
+
+    return () => {
+      getContract().then(c => c.removeAllListeners());
+    };
+  }, [status.account, provider]);
 
   return (
     <div className="app">
